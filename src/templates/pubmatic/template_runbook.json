@@ -1,0 +1,13 @@
+{
+  "template_name": "pubmatic_runbook_v1",
+  "doc_type": "RUNBOOK",
+  "sections": [
+    { "section_id": "PURPOSE", "aliases": ["purpose", "summary", "overview"] },
+    { "section_id": "PRECHECKS", "aliases": ["prechecks", "pre-requisites", "prerequisites"] },
+    { "section_id": "PROCEDURE", "aliases": ["procedure", "steps", "instructions", "runbook steps"] },
+    { "section_id": "ROLLBACK", "aliases": ["rollback", "revert"] },
+    { "section_id": "ALERTS", "aliases": ["alerts", "dashboards", "monitoring"] },
+    { "section_id": "ESCALATION", "aliases": ["escalation", "on-call", "contacts"] },
+    { "section_id": "POSTMORTEM", "aliases": ["postmortem", "rca", "root cause"] }
+  ]
+}

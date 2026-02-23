@@ -1,0 +1,18 @@
+{
+  "template_name": "pubmatic_prd_v1",
+  "doc_type": "PRD",
+  "sections": [
+    { "section_id": "SUMMARY", "aliases": ["summary", "one pager", "tl;dr", "overview"] },
+    { "section_id": "BACKGROUND", "aliases": ["background", "context"] },
+    { "section_id": "PROBLEM", "aliases": ["problem", "problem statement", "pain point", "challenge"] },
+    { "section_id": "GOALS", "aliases": ["goals", "objectives", "success criteria"] },
+    { "section_id": "NON_GOALS", "aliases": ["non-goals", "out of scope"] },
+    { "section_id": "REQUIREMENTS_FUNCTIONAL", "aliases": ["functional requirements", "requirements", "features"] },
+    { "section_id": "REQUIREMENTS_NON_FUNCTIONAL", "aliases": ["non-functional requirements", "nfr", "performance", "scalability", "latency", "sla"] },
+    { "section_id": "USER_STORIES", "aliases": ["user stories", "use cases", "acceptance criteria"] },
+    { "section_id": "METRICS", "aliases": ["metrics", "measurement", "kpi"] },
+    { "section_id": "RISKS", "aliases": ["risks", "assumptions", "constraints"] },
+    { "section_id": "ROLL_OUT", "aliases": ["rollout", "release plan", "launch plan"] },
+    { "section_id": "OPEN_QUESTIONS", "aliases": ["open questions", "tbd", "todo"] }
+  ]
+}

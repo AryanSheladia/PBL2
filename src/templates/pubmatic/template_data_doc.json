@@ -1,0 +1,13 @@
+{
+  "template_name": "pubmatic_data_doc_v1",
+  "doc_type": "DATA",
+  "sections": [
+    { "section_id": "DATASET_OVERVIEW", "aliases": ["dataset", "overview", "description"] },
+    { "section_id": "SCHEMA", "aliases": ["schema", "columns", "data dictionary"] },
+    { "section_id": "FRESHNESS_SLA", "aliases": ["freshness", "sla", "latency", "update frequency"] },
+    { "section_id": "SOURCES", "aliases": ["sources", "upstream", "origin"] },
+    { "section_id": "TRANSFORMS", "aliases": ["transformations", "processing", "etl"] },
+    { "section_id": "CONSUMERS_DEPENDENCIES", "aliases": ["consumers", "dependencies", "downstream"] },
+    { "section_id": "SAMPLE_QUERIES", "aliases": ["sample queries", "examples"] }
+  ]
+}

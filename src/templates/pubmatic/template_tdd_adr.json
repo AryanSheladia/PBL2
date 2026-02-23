@@ -1,0 +1,18 @@
+{
+  "template_name": "pubmatic_tdd_adr_v1",
+  "doc_type": "TDD",
+  "sections": [
+    { "section_id": "CONTEXT", "aliases": ["context", "background", "problem"] },
+    { "section_id": "PROPOSED_DESIGN", "aliases": ["proposed design", "solution", "approach"] },
+    { "section_id": "ARCHITECTURE", "aliases": ["architecture", "high level design", "components"] },
+    { "section_id": "DATA_FLOW", "aliases": ["data flow", "workflow", "sequence", "pipeline"] },
+    { "section_id": "API_CONTRACTS", "aliases": ["api", "interfaces", "contracts"] },
+    { "section_id": "DATA_MODEL", "aliases": ["data model", "schema", "tables"] },
+    { "section_id": "SECURITY_PRIVACY", "aliases": ["security", "privacy", "compliance"] },
+    { "section_id": "OBSERVABILITY", "aliases": ["observability", "logging", "metrics", "tracing"] },
+    { "section_id": "DEPLOYMENT", "aliases": ["deployment", "rollout", "migration"] },
+    { "section_id": "ALTERNATIVES", "aliases": ["alternatives", "trade-offs", "pros and cons"] },
+    { "section_id": "RISKS", "aliases": ["risks", "limitations"] },
+    { "section_id": "OPEN_QUESTIONS", "aliases": ["open questions", "tbd", "todo"] }
+  ]
+}

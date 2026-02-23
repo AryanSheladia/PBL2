@@ -1,0 +1,13 @@
+{
+  "template_name": "pubmatic_api_spec_v1",
+  "doc_type": "API",
+  "sections": [
+    { "section_id": "API_OVERVIEW", "aliases": ["overview", "introduction", "about"] },
+    { "section_id": "AUTH", "aliases": ["auth", "authentication", "authorization"] },
+    { "section_id": "ENDPOINTS", "aliases": ["endpoints", "routes", "api reference"] },
+    { "section_id": "ERRORS", "aliases": ["errors", "error codes", "status codes"] },
+    { "section_id": "RATE_LIMITS", "aliases": ["rate limits", "throttling", "quotas"] },
+    { "section_id": "EXAMPLES", "aliases": ["examples", "sample requests", "sample responses"] },
+    { "section_id": "CHANGELOG", "aliases": ["changelog", "release notes", "changes"] }
+  ]
+}
