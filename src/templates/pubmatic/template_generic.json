@@ -1,0 +1,14 @@
+{
+  "template_name": "pubmatic_generic_v1",
+  "doc_type": "GENERIC",
+  "sections": [
+    { "section_id": "SUMMARY", "aliases": ["summary", "overview", "tl;dr", "abstract"] },
+    { "section_id": "CONTEXT", "aliases": ["context", "background", "why", "motivation"] },
+    { "section_id": "PROBLEM", "aliases": ["problem", "issue", "challenge", "pain point"] },
+    { "section_id": "SOLUTION", "aliases": ["solution", "approach", "proposal", "plan"] },
+    { "section_id": "DETAILS", "aliases": ["details", "implementation", "design", "architecture"] },
+    { "section_id": "RISKS", "aliases": ["risks", "limitations", "concerns"] },
+    { "section_id": "OPEN_QUESTIONS", "aliases": ["open questions", "tbd", "todo", "next steps"] },
+    { "section_id": "MISC_NOTES", "aliases": ["notes", "misc", "appendix"] }
+  ]
+}
