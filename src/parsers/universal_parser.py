@@ -25,7 +25,7 @@ TEMPLATE_MAP = {
     "API": "src/templates/pubmatic/template_api_spec.json",
     "RUNBOOK": "src/templates/pubmatic/template_runbook.json",
     "DATA": "src/templates/pubmatic/template_data_doc.json",
-    "GENERIC": "src/templates/pubmatic/template_generic.json",  # add this file
+    "GENERIC": "src/templates/pubmatic/template_generic.json",  # REQUIRED
 }
 
 
@@ -37,19 +37,19 @@ def _load_all_templates() -> List[Dict[str, Any]]:
     return [load_template(p) for p in TEMPLATE_MAP.values()]
 
 
-def _merge_templates(t1: Dict[str, Any], t2: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_templates(templates: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Merge section lists by section_id; combine aliases.
-    Useful for mixed docs (API+Runbook etc.).
+    Merge N templates.
+    Union by section_id, merge aliases.
     """
     merged = {
-        "template_name": f"{t1.get('template_name','t1')}+{t2.get('template_name','t2')}",
-        "doc_type": f"{t1.get('doc_type','') }+{t2.get('doc_type','')}".strip("+"),
+        "template_name": "+".join(t.get("template_name", "t") for t in templates),
+        "doc_type": "+".join(t.get("doc_type", "") for t in templates if t.get("doc_type")),
         "sections": [],
     }
 
     by_id: Dict[str, set] = {}
-    for t in (t1, t2):
+    for t in templates:
         for s in t.get("sections", []):
             sid = s["section_id"]
             by_id.setdefault(sid, set()).update(s.get("aliases", []))
@@ -77,11 +77,9 @@ def _heading_like(line: str) -> bool:
     if len(line.split()) > 14:
         return False
 
-    # numbered headings: "1. Title", "2.1 Something"
     if re.match(r"^(\d+(\.\d+)*)\s+.+", line):
         return True
 
-    # all-caps / title-ish
     letters = [c for c in line if c.isalpha()]
     if letters:
         caps_ratio = sum(1 for c in letters if c.isupper()) / len(letters)
@@ -98,10 +96,6 @@ def _heading_like(line: str) -> bool:
 
 
 def _match_section_id(heading: str, template: Dict[str, Any]) -> Tuple[str, float]:
-    """
-    Fuzzy-match a heading to template section aliases.
-    Returns (section_id, confidence_0_to_1). section_id may be UNMAPPED.
-    """
     h = _norm(heading)
     best_id = "UNMAPPED"
     best_score = 0
@@ -128,25 +122,20 @@ def _anchor_from_heading(section_id: str, heading: str) -> str:
 
 
 # -------------------------------------------------------------------
-# Template scoring / selection (robust to doc-type mistakes)
+# Template scoring + multi-template selection (Enterprise)
 # -------------------------------------------------------------------
 
 def _template_score(template: Dict[str, Any], headings: List[str], full_text: str) -> float:
-    """
-    Score template against doc by:
-    - how many headings match aliases (high weight)
-    - how many alias keywords exist in full text (low weight)
-    """
     score = 0.0
     ft = _norm(full_text)
 
-    # headings match weight
+    # Heading matches are high value
     for h in headings:
         sid, conf = _match_section_id(h, template)
         if sid != "UNMAPPED":
             score += 2.0 * conf
 
-    # text keyword hits weight
+    # Text keyword hits are low value
     for sec in template.get("sections", []):
         for a in sec.get("aliases", []):
             if _norm(a) in ft:
@@ -155,28 +144,45 @@ def _template_score(template: Dict[str, Any], headings: List[str], full_text: st
     return score
 
 
-def _choose_template(full_text: str, candidates: List[Tuple[int, str, Optional[int]]]) -> Tuple[str, Dict[str, Any]]:
+def _choose_enterprise_template(full_text: str, candidates: List[Tuple[int, str, Optional[int]]]) -> Tuple[str, Dict[str, Any], Dict[str, float]]:
     """
-    Returns (doc_type_guess, chosen_template_dict).
-    Uses detect_doc_type for reporting, but selects template by scoring,
-    and merges top two if they are close (mixed docs).
+    Choose best template by scoring all, then:
+    - merge top K (K<=3) if their scores are close
+    - ALWAYS include GENERIC as a backstop for leftover headings
+    Returns: (doc_type_guess, merged_template, score_debug)
     """
     doc_type_guess = detect_doc_type(full_text)
     headings = [h for (_, h, _) in candidates] if candidates else []
 
     templates = _load_all_templates()
-    scored = [(t, _template_score(t, headings, full_text)) for t in templates]
+
+    scored = []
+    for t in templates:
+        s = _template_score(t, headings, full_text)
+        scored.append((t, s))
+
     scored.sort(key=lambda x: x[1], reverse=True)
 
-    best_t, best_score = scored[0]
-    second_t, second_score = scored[1] if len(scored) > 1 else (None, -1)
+    # Always keep GENERIC around as a backstop template
+    generic = next((t for t in templates if t.get("doc_type") == "GENERIC" or "generic" in t.get("template_name", "").lower()), None)
 
-    # Mixed doc: scores close enough (and meaningful)
-    if second_t and best_score > 0 and second_score >= 0.85 * best_score:
-        merged = _merge_templates(best_t, second_t)
-        return doc_type_guess, merged
+    best, best_score = scored[0]
+    selected = [best]
 
-    return doc_type_guess, best_t
+    # Merge up to 3 if close enough
+    for (t, sc) in scored[1:]:
+        if len(selected) >= 3:
+            break
+        if best_score > 0 and sc >= 0.80 * best_score and sc > 0:
+            selected.append(t)
+
+    if generic and generic not in selected:
+        selected.append(generic)
+
+    merged = _merge_templates(selected)
+
+    debug_scores = {t.get("template_name", "t"): sc for (t, sc) in scored[:5]}
+    return doc_type_guess, merged, debug_scores
 
 
 # -------------------------------------------------------------------
@@ -184,12 +190,6 @@ def _choose_template(full_text: str, candidates: List[Tuple[int, str, Optional[i
 # -------------------------------------------------------------------
 
 def _extract_pdf(pdf_path: Path) -> Tuple[str, List[Dict[str, Any]], List[Tuple[int, int, int]]]:
-    """
-    Returns:
-      full_text,
-      lines: [{text, page, size, bold}]
-      page_map: [(start_char, end_char, page_no)]
-    """
     doc = fitz.open(str(pdf_path))
     all_lines: List[Dict[str, Any]] = []
     parts: List[str] = []
@@ -229,13 +229,12 @@ def _pdf_heading_candidates(lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     if not lines:
         return []
     sizes = sorted([l["size"] for l in lines])
-    body = sizes[len(sizes) // 2]  # median
+    body = sizes[len(sizes) // 2]
     out = []
 
     for l in lines:
         if not _heading_like(l["text"]):
             continue
-        # font threshold for headings
         if l["size"] >= body + 2 or (l["bold"] and l["size"] >= body + 0.5):
             out.append(l)
 
@@ -271,7 +270,6 @@ def _char_range_to_pages(page_map: Optional[List[Tuple[int, int, int]]], start: 
 
 def _extract_docx_with_structure(docx_path: Path) -> Tuple[str, List[Dict[str, Any]]]:
     d = docx.Document(str(docx_path))
-
     lines: List[Dict[str, Any]] = []
     full_parts: List[str] = []
 
@@ -282,8 +280,6 @@ def _extract_docx_with_structure(docx_path: Path) -> Tuple[str, List[Dict[str, A
 
         style_name = p.style.name if p.style else ""
         is_heading_style = "heading" in style_name.lower()
-
-        # bold heading detection (common in messy docs)
         bold_run = any((run.text and run.bold) for run in p.runs)
 
         is_short = len(text.split()) <= 12
@@ -294,8 +290,7 @@ def _extract_docx_with_structure(docx_path: Path) -> Tuple[str, List[Dict[str, A
         lines.append({"text": text, "is_heading": is_heading})
         full_parts.append(text + "\n")
 
-    full_text = "".join(full_parts)
-    return full_text, lines
+    return "".join(full_parts), lines
 
 
 def _build_candidates_docx(full_text: str, docx_lines: List[Dict[str, Any]]) -> List[Tuple[int, str, Optional[int]]]:
@@ -309,6 +304,7 @@ def _build_candidates_docx(full_text: str, docx_lines: List[Dict[str, Any]]) -> 
             cursor = idx + len(text)
         elif idx != -1:
             cursor = idx + len(text)
+
     return sorted(set(candidates), key=lambda x: x[0])
 
 
@@ -325,25 +321,18 @@ def _extract_csv(csv_path: Path) -> str:
     lines = []
     lines.append("DATASET OVERVIEW")
     lines.append(f"Rows: {len(df)}")
-    lines.append(
-        f"Columns ({len(df.columns)}): {', '.join(map(str, df.columns[:30]))}"
-        + ("..." if len(df.columns) > 30 else "")
-    )
+    lines.append(f"Columns ({len(df.columns)}): {', '.join(map(str, df.columns[:30]))}" + ("..." if len(df.columns) > 30 else ""))
     lines.append("\nSCHEMA\n" + "\n".join([f"- {c}" for c in df.columns[:50]]))
+    lines.append("\nSAMPLE QUERIES\nSELECT * FROM dataset LIMIT 5;")
     lines.append("\nSAMPLE\n" + df.head(5).to_string(index=False))
     return "\n".join(lines) + "\n"
 
 
 # -------------------------------------------------------------------
-# Semantic fallback (for trash formatting)
+# Semantic fallback
 # -------------------------------------------------------------------
 
 def _split_into_chunks(full_text: str) -> List[str]:
-    """
-    More robust than splitting only on blank lines:
-    - split on blank lines first
-    - if too few chunks, split on bullet/number patterns
-    """
     chunks = [p.strip() for p in re.split(r"\n\s*\n", full_text) if p.strip()]
     if len(chunks) >= 3:
         return chunks
@@ -355,7 +344,6 @@ def _split_into_chunks(full_text: str) -> List[str]:
         if not line:
             continue
 
-        # new chunk if bullet/number line begins and we already have text
         if re.match(r"^(\-|\*|•|\d+\.|\d+\))\s+", line) and buff:
             chunks.append(" ".join(buff).strip())
             buff = [line]
@@ -371,41 +359,35 @@ def _split_into_chunks(full_text: str) -> List[str]:
 def _semantic_bucket(full_text: str, template: Dict[str, Any]) -> List[Section]:
     chunks = _split_into_chunks(full_text)
 
-    # If template lacks MISC_NOTES, create a safe fallback bucket id
-    template_section_ids = [s["section_id"] for s in template.get("sections", [])]
-    misc_id = "MISC_NOTES" if "MISC_NOTES" in template_section_ids else template_section_ids[-1] if template_section_ids else "UNMAPPED"
+    sec_ids = [s["section_id"] for s in template.get("sections", [])]
+    misc_id = "MISC_NOTES" if "MISC_NOTES" in sec_ids else (sec_ids[-1] if sec_ids else "MISC_NOTES")
 
-    buckets: Dict[str, List[str]] = {sid: [] for sid in template_section_ids}
-    if misc_id not in buckets:
-        buckets[misc_id] = []
+    buckets: Dict[str, List[str]] = {sid: [] for sid in sec_ids}
+    buckets.setdefault(misc_id, [])
 
-    def score_chunk_to_section(chunk: str, sec: Dict[str, Any]) -> int:
+    def score(chunk: str, sec: Dict[str, Any]) -> int:
         ct = _norm(chunk)
-        score = 0
+        s = 0
         for a in sec.get("aliases", []):
             if _norm(a) in ct:
-                score += 1
-        return score
+                s += 1
+        return s
 
     for chunk in chunks:
         best_sid = misc_id
-        best_score = 0
+        best = 0
         for sec in template.get("sections", []):
             sid = sec["section_id"]
-            sc = score_chunk_to_section(chunk, sec)
-            if sc > best_score:
-                best_score = sc
+            sc = score(chunk, sec)
+            if sc > best:
+                best = sc
                 best_sid = sid
-
-        # If nothing matched, dump into misc (prevents everything going to SUMMARY/AUTH etc.)
-        if best_score == 0:
+        if best == 0:
             best_sid = misc_id
-
-        buckets.setdefault(best_sid, []).append(chunk)
+        buckets[best_sid].append(chunk)
 
     sections: List[Section] = []
-    for sec in template.get("sections", []):
-        sid = sec["section_id"]
+    for sid in sec_ids:
         if not buckets.get(sid):
             continue
         content = "\n\n".join(buckets[sid]).strip()
@@ -422,8 +404,8 @@ def _semantic_bucket(full_text: str, template: Dict[str, Any]) -> List[Section]:
             )
         )
 
-    # If misc got content but section not present in template (rare), still emit it
-    if misc_id not in template_section_ids and buckets.get(misc_id):
+    # always output misc if it has content and isn’t already emitted
+    if misc_id not in sec_ids and buckets.get(misc_id):
         content = "\n\n".join(buckets[misc_id]).strip()
         sections.append(
             Section(
@@ -442,7 +424,7 @@ def _semantic_bucket(full_text: str, template: Dict[str, Any]) -> List[Section]:
 
 
 # -------------------------------------------------------------------
-# Main parser
+# Main
 # -------------------------------------------------------------------
 
 def parse_any(file_path: str | Path) -> ParsedDocument:
@@ -453,7 +435,6 @@ def parse_any(file_path: str | Path) -> ParsedDocument:
     page_map: Optional[List[Tuple[int, int, int]]] = None
     candidates: List[Tuple[int, str, Optional[int]]] = []
 
-    # 1) Extract + heading candidates (PDF/DOCX)
     if suffix == ".pdf":
         full_text, lines, page_map = _extract_pdf(file_path)
         candidates = _build_candidates_pdf(full_text, lines)
@@ -476,10 +457,10 @@ def parse_any(file_path: str | Path) -> ParsedDocument:
     else:
         raise ValueError(f"Unsupported file type: {suffix}")
 
-    # 2) Choose template robustly (score + merge)
-    doc_type_guess, template = _choose_template(full_text, candidates)
+    # Enterprise template selection (score + merge + generic backstop)
+    doc_type_guess, template, _debug_scores = _choose_enterprise_template(full_text, candidates)
 
-    # 3) If no headings available, semantic fallback
+    # If no headings -> semantic fallback
     if len(candidates) == 0:
         sections = _semantic_bucket(full_text, template)
         return ParsedDocument(
@@ -490,13 +471,19 @@ def parse_any(file_path: str | Path) -> ParsedDocument:
             sections=sections,
         )
 
-    # 4) Heading split
+    # Heading split (and force UNMAPPED into GENERIC/MISC_NOTES)
     sections: List[Section] = []
     for i, (start, heading, page) in enumerate(candidates):
         end = candidates[i + 1][0] if i + 1 < len(candidates) else len(full_text)
         chunk = full_text[start:end].strip()
 
         sid, conf = _match_section_id(heading, template)
+
+        # Enterprise: never leave UNMAPPED; fallback to MISC_NOTES
+        if sid == "UNMAPPED":
+            sid = "MISC_NOTES"
+            conf = max(conf, 0.55)
+
         anchor = _anchor_from_heading(sid, heading)
         pr = _char_range_to_pages(page_map, start, end) if page_map else None
 

@@ -5,7 +5,9 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-from src.parsers.universal_parser import parse_any  # uses your existing parser
+from src.services.document_service import create_document, update_document_status, get_document_by_filename
+from src.services.parser_service import store_parsed_document
+from src.parsers.universal_parser import parse_any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -14,15 +16,18 @@ LOGS_DIR = PROJECT_ROOT / "logs"
 
 
 class ParserUI(tk.Tk):
+
     def __init__(self):
         super().__init__()
+
         self.title("PBL_2 - Universal Parser")
         self.geometry("900x600")
 
         DATA_DIR.mkdir(exist_ok=True)
         LOGS_DIR.mkdir(exist_ok=True)
 
-        # Top controls
+        # ---------------- Top Controls ---------------- #
+
         top = ttk.Frame(self, padding=10)
         top.pack(fill="x")
 
@@ -31,8 +36,14 @@ class ParserUI(tk.Tk):
 
         ttk.Label(top, text="   Select File:").pack(side="left")
 
-        self.file_var = tk.StringVar()
-        self.file_dropdown = ttk.Combobox(top, textvariable=self.file_var, state="readonly", width=60)
+        self.file_var = tk.StringVar(value="Select file")
+
+        self.file_dropdown = ttk.Combobox(
+            top,
+            textvariable=self.file_var,
+            state="readonly",
+            width=60
+        )
         self.file_dropdown.pack(side="left", padx=8)
 
         self.refresh_btn = ttk.Button(top, text="Refresh", command=self.refresh_files)
@@ -41,7 +52,8 @@ class ParserUI(tk.Tk):
         self.parse_btn = ttk.Button(top, text="Parse", command=self.parse_selected)
         self.parse_btn.pack(side="left", padx=8)
 
-        # Output area
+        # ---------------- Output Area ---------------- #
+
         mid = ttk.Frame(self, padding=10)
         mid.pack(fill="both", expand=True)
 
@@ -50,84 +62,116 @@ class ParserUI(tk.Tk):
 
         self.refresh_files()
 
+    # ------------------------------------------------ #
+
     def log(self, msg: str):
         self.output.insert("end", msg + "\n")
         self.output.see("end")
 
+    # ------------------------------------------------ #
+
     def refresh_files(self):
-        files = [p.name for p in DATA_DIR.iterdir() if p.is_file() and p.suffix.lower() in [".pdf", ".docx", ".txt", ".md", ".csv"]]
-        files.sort()
+
+        files = [f.name for f in DATA_DIR.iterdir() if f.is_file()]
+
         self.file_dropdown["values"] = files
 
-        if files:
-            if self.file_var.get() not in files:
-                self.file_var.set(files[-1])  # select latest alphabetically
-        else:
-            self.file_var.set("")
+        # reset dropdown
+        self.file_var.set("Select file")
+
+        # clear output window
+        self.output.delete("1.0", "end")
+
+    # ------------------------------------------------ #
 
     def upload_file(self):
-        file_path = filedialog.askopenfilename(
-            title="Choose a file to upload",
-            filetypes=[
-                ("Supported files", "*.pdf *.docx *.txt *.md *.csv"),
-                ("PDF", "*.pdf"),
-                ("Word", "*.docx"),
-                ("Text", "*.txt *.md"),
-                ("CSV", "*.csv"),
-                ("All files", "*.*"),
-            ],
-        )
-        if not file_path:
+
+        filepath = filedialog.askopenfilename()
+
+        if not filepath:
             return
 
-        src = Path(file_path)
-        if not src.exists():
-            messagebox.showerror("Error", "File not found.")
-            return
-
+        src = Path(filepath)
         dest = DATA_DIR / src.name
-        try:
-            shutil.copy2(src, dest)
-        except Exception as e:
-            messagebox.showerror("Copy failed", str(e))
-            return
 
-        self.log(f"✅ Uploaded: {src.name}  →  data/{src.name}")
+        shutil.copy(src, dest)
+
+        # Save metadata in Mongo
+        create_document(
+            file_name=dest.name,
+            file_size=dest.stat().st_size,
+            storage_path=str(dest)
+        )
+
+        self.log(f"Uploaded {dest.name}")
+
         self.refresh_files()
-        self.file_var.set(dest.name)
+
+    # ------------------------------------------------ #
 
     def parse_selected(self):
+
         filename = self.file_var.get().strip()
-        if not filename:
-            messagebox.showwarning("No file selected", "Upload a file or select one from the dropdown.")
+
+        if filename == "Select file":
+            messagebox.showwarning("No file selected", "Please select a file.")
             return
 
         doc_path = DATA_DIR / filename
+
         if not doc_path.exists():
             messagebox.showerror("Error", f"File missing: {doc_path}")
-            self.refresh_files()
             return
 
         self.log(f"\n--- Parsing: {filename} ---")
+
         try:
-            parsed = parse_any(doc_path)  # your universal parser
+
+            # Fetch document from DB
+            doc = get_document_by_filename(filename)
+
+            if not doc:
+                messagebox.showerror("Error", "Document not found in DB")
+                return
+
+            document_id = doc["_id"]
+
+            # Update status
+            update_document_status(document_id, "parsing", "parsing")
+
+            # Run parser
+            parsed = parse_any(doc_path)
+
+            # Store parsed result
+            store_parsed_document(document_id, parsed)
+
+            # Update final status
+            update_document_status(document_id, "parsed", "parsed")
+
         except Exception as e:
-            messagebox.showerror("Parse failed", str(e))
+
             self.log(f"❌ Parse failed: {e}")
+            messagebox.showerror("Parse failed", str(e))
             return
 
-        out_path = LOGS_DIR / f"{doc_path.stem}.parsed.json"
-        out_path.write_text(parsed.model_dump_json(indent=2), encoding="utf-8")
+        # Display parsed output
 
         self.log(f"Doc type: {parsed.doc_type}")
         self.log(f"Template: {parsed.template_name}")
         self.log("Sections:")
-        for s in parsed.sections:
-            self.log(f" - {s.section_id:24} conf={s.confidence:.2f} anchor={s.anchor}")
 
-        self.log(f"✅ Saved JSON → logs/{out_path.name}")
+        for s in parsed.sections:
+            self.log(
+                f" - {s.section_id:24} "
+                f"conf={getattr(s,'confidence',0):.2f} "
+                f"anchor={getattr(s,'anchor',None)}"
+            )
+
+        self.log("✅ Parsed output stored in MongoDB")
         self.log("--- Done ---\n")
 
+
+# ---------------------------------------------------- #
 
 if __name__ == "__main__":
     app = ParserUI()
