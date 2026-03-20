@@ -1,5 +1,7 @@
 from datetime import datetime
 from src.database.collections import parsed_documents_collection
+from src.services.embedding_service import embed_and_store
+from src.services.graph_service import store_graph
 
 
 def store_parsed_document(document_id, parsed_doc):
@@ -25,8 +27,18 @@ def store_parsed_document(document_id, parsed_doc):
         "created_at": datetime.utcnow()
     }
 
+    # ✅ Mongo
     parsed_documents_collection.update_one(
         {"document_id": document_id},
         {"$set": parsed_document},
         upsert=True
     )
+    print("✅ Stored in Mongo")
+
+    # ✅ Qdrant
+    embed_and_store(document_id, sections)
+
+    # ✅ Neo4j
+    store_graph(document_id, sections)
+
+    print("✅ Full pipeline complete (Mongo + Qdrant + Neo4j)")

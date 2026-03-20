@@ -356,7 +356,7 @@ def _split_into_chunks(full_text: str) -> List[str]:
     return [c for c in chunks if c]
 
 
-def _semantic_bucket(full_text: str, template: Dict[str, Any]) -> List[Section]:
+def _semantic_bucket(full_text: str, template: Dict[str, Any], file_path: Path) -> List[Section]:
     chunks = _split_into_chunks(full_text)
 
     sec_ids = [s["section_id"] for s in template.get("sections", [])]
@@ -387,13 +387,13 @@ def _semantic_bucket(full_text: str, template: Dict[str, Any]) -> List[Section]:
         buckets[best_sid].append(chunk)
 
     sections: List[Section] = []
-    for sid in sec_ids:
+    for i, sid in enumerate(sec_ids):
         if not buckets.get(sid):
             continue
         content = "\n\n".join(buckets[sid]).strip()
         sections.append(
             Section(
-                section_id=sid,
+                section_id=f"{file_path.stem}_{sid}_{i}",
                 heading=sid.replace("_", " ").title(),
                 anchor=f"{sid.lower()}::semantic",
                 content=content,
@@ -462,7 +462,7 @@ def parse_any(file_path: str | Path) -> ParsedDocument:
 
     # If no headings -> semantic fallback
     if len(candidates) == 0:
-        sections = _semantic_bucket(full_text, template)
+        sections = _semantic_bucket(full_text, template, file_path)
         return ParsedDocument(
             source_path=str(file_path),
             template_name=template.get("template_name", "unknown_template"),
@@ -489,7 +489,7 @@ def parse_any(file_path: str | Path) -> ParsedDocument:
 
         sections.append(
             Section(
-                section_id=sid,
+                section_id=f"{file_path.stem}_{sid}_{i}",
                 heading=heading,
                 anchor=anchor,
                 content=chunk,
