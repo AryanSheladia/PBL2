@@ -4,7 +4,7 @@ from src.services.embedding_service import embed_and_store
 from src.services.graph_service import store_graph
 
 
-def store_parsed_document(document_id, parsed_doc):
+def store_parsed_document(document_id, parsed_doc, version_path):
 
     sections = []
 
@@ -24,19 +24,16 @@ def store_parsed_document(document_id, parsed_doc):
         "template_name": parsed_doc.template_name,
         "section_count": len(sections),
         "sections": sections,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.utcnow(),
+        "file_version_path": version_path
     }
 
     # ✅ Mongo
-    parsed_documents_collection.update_one(
-        {"document_id": document_id},
-        {"$set": parsed_document},
-        upsert=True
-    )
+    parsed_documents_collection.insert_one(parsed_document)
     print("✅ Stored in Mongo")
 
     # ✅ Qdrant
-    embed_and_store(document_id, sections)
+    embed_and_store(document_id, sections, version_path)
 
     # ✅ Neo4j
     store_graph(document_id, sections)

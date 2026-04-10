@@ -8,6 +8,8 @@ from tkinter import ttk, filedialog, messagebox
 from src.services.document_service import create_document, update_document_status, get_document_by_filename
 from src.services.parser_service import store_parsed_document
 from src.parsers.universal_parser import parse_any
+from src.services.versioning_service import save_versioned_file
+from src.services.sync_service import sync_deleted_files
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +54,9 @@ class ParserUI(tk.Tk):
         self.parse_btn = ttk.Button(top, text="Parse", command=self.parse_selected)
         self.parse_btn.pack(side="left", padx=8)
 
+        self.sync_btn = ttk.Button(top, text="Sync Deletes", command=self.sync_deleted)
+        self.sync_btn.pack(side="left", padx=5)
+
         # ---------------- Output Area ---------------- #
 
         mid = ttk.Frame(self, padding=10)
@@ -81,6 +86,16 @@ class ParserUI(tk.Tk):
 
         # clear output window
         self.output.delete("1.0", "end")
+        
+
+    def sync_deleted(self):
+        self.log("\n🔄 Syncing deleted files...")
+
+        try:
+            sync_deleted_files()
+            self.log("✅ Sync complete")
+        except Exception as e:
+            self.log(f"❌ Sync failed: {e}")
 
     # ------------------------------------------------ #
 
@@ -136,14 +151,19 @@ class ParserUI(tk.Tk):
 
             document_id = doc["_id"]
 
+            # 🔥 STEP 1: SAVE VERSIONED FILE (NEW)
+            version_path = save_versioned_file(str(doc_path), document_id)
+
+            self.log(f"📁 Version saved at: {version_path}")
+
             # Update status
             update_document_status(document_id, "parsing", "parsing")
 
             # Run parser
             parsed = parse_any(doc_path)
 
-            # Store parsed result
-            store_parsed_document(document_id, parsed)
+            # 🔥 STEP 2: STORE PARSED + VERSION PATH (NEW)
+            store_parsed_document(document_id, parsed, version_path)
 
             # Update final status
             update_document_status(document_id, "parsed", "parsed")
@@ -168,6 +188,7 @@ class ParserUI(tk.Tk):
             )
 
         self.log("✅ Parsed output stored in MongoDB")
+        self.log("🧾 Version tracked in logs/")
         self.log("--- Done ---\n")
 
 

@@ -2,18 +2,22 @@ import uuid
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
 
-# Initialize once (important)
 client = QdrantClient(host="localhost", port=6333)
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 COLLECTION_NAME = "document_sections"
 
 
-def embed_and_store(document_id, sections):
+def embed_and_store(document_id, sections, version_id):
+
     points = []
 
-    for i, section in enumerate(sections):
-        text = section.get("content", "")
+    for section in sections:
+        content = section.get("content", "")
+        heading = section.get("heading", "")
+
+        # 🔥 KEY: heading + content
+        text = f"{heading}\n{content}"
 
         if not text.strip():
             continue
@@ -26,8 +30,9 @@ def embed_and_store(document_id, sections):
             "payload": {
                 "document_id": str(document_id),
                 "section_id": section.get("section_id"),
-                "heading": section.get("heading"),
-                "content": text
+                "heading": heading,
+                "content": content,
+                "version_id": str(version_id)
             }
         })
 
@@ -35,7 +40,6 @@ def embed_and_store(document_id, sections):
         print("⚠️ No valid sections to embed")
         return
 
-    # Create collection if not exists
     try:
         client.get_collection(COLLECTION_NAME)
     except:
@@ -44,9 +48,6 @@ def embed_and_store(document_id, sections):
             vectors_config={"size": 384, "distance": "Cosine"}
         )
 
-    client.upsert(
-        collection_name=COLLECTION_NAME,
-        points=points
-    )
+    client.upsert(collection_name=COLLECTION_NAME, points=points)
 
     print(f"✅ Stored {len(points)} embeddings in Qdrant")

@@ -114,6 +114,23 @@ def _match_section_id(heading: str, template: Dict[str, Any]) -> Tuple[str, floa
     return best_id, conf
 
 
+def _stable_section_id(file_path: Path, heading: str, existing_ids: set) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", _norm(heading)).strip("-")
+
+    if not slug:
+        slug = "unknown-section"
+
+    base_id = f"{file_path.stem}::{slug}"
+    section_id = base_id
+
+    counter = 1
+    while section_id in existing_ids:
+        section_id = f"{base_id}-{counter}"
+        counter += 1
+
+    existing_ids.add(section_id)
+    return section_id
+
 def _anchor_from_heading(section_id: str, heading: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", _norm(heading)).strip("-")
     if not slug:
@@ -387,13 +404,14 @@ def _semantic_bucket(full_text: str, template: Dict[str, Any], file_path: Path) 
         buckets[best_sid].append(chunk)
 
     sections: List[Section] = []
+    existing_ids = set()
     for i, sid in enumerate(sec_ids):
         if not buckets.get(sid):
             continue
         content = "\n\n".join(buckets[sid]).strip()
         sections.append(
             Section(
-                section_id=f"{file_path.stem}_{sid}_{i}",
+                section_id=_stable_section_id(file_path, sid, existing_ids),
                 heading=sid.replace("_", " ").title(),
                 anchor=f"{sid.lower()}::semantic",
                 content=content,
@@ -473,6 +491,7 @@ def parse_any(file_path: str | Path) -> ParsedDocument:
 
     # Heading split (and force UNMAPPED into GENERIC/MISC_NOTES)
     sections: List[Section] = []
+    existing_ids = set()
     for i, (start, heading, page) in enumerate(candidates):
         end = candidates[i + 1][0] if i + 1 < len(candidates) else len(full_text)
         chunk = full_text[start:end].strip()
@@ -489,7 +508,7 @@ def parse_any(file_path: str | Path) -> ParsedDocument:
 
         sections.append(
             Section(
-                section_id=f"{file_path.stem}_{sid}_{i}",
+                section_id=_stable_section_id(file_path, heading, existing_ids),
                 heading=heading,
                 anchor=anchor,
                 content=chunk,
