@@ -3,8 +3,6 @@ from neo4j import GraphDatabase
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
 
-# ---------------- CONFIG ----------------
-
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
 NEO4J_PASS = "password"
@@ -16,27 +14,33 @@ qdrant = QdrantClient(host="localhost", port=6333)
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
-# ---------------- AGENT ----------------
-
 class DependencyAgent:
 
-    # 🔴 DELETE CASE → graph traversal
     def _handle_delete(self, section_id: str) -> List[Dict]:
 
         with driver.session() as session:
             result = session.run(
                 """
                 MATCH (s:Section {section_id: $sid})
-                MATCH (s)<-[:DEPENDS_ON|RELATED_TO*1..3]-(impacted)
+                MATCH (s)<-[:DEPENDS_ON*1..3]-(impacted)
                 RETURN DISTINCT impacted.section_id AS section_id
                 """,
                 sid=section_id
             )
 
-            return [{"section_id": r["section_id"], "reason": "upstream dependency"} for r in result]
+            impacted = []
+            for r in result:
+                if r["section_id"] == section_id:
+                    continue  # 🔥 remove self-loop
+
+                impacted.append({
+                    "section_id": r["section_id"],
+                    "reason": "upstream dependency"
+                })
+
+            return impacted
 
 
-    # 🟢 ADD / MODIFY → semantic + graph
     def _handle_add_modify(self, section_id: str, content: str) -> List[Dict]:
 
         if not content:
@@ -71,8 +75,6 @@ class DependencyAgent:
 
         return impacted
 
-
-    # ---------------- MAIN ----------------
 
     def get_impacted_sections(
         self,

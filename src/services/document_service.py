@@ -2,6 +2,7 @@ from datetime import datetime
 from src.database.collections import documents_collection
 from src.database.connection import get_db
 from bson import ObjectId
+from pymongo import MongoClient
 
 def get_document_by_filename(filename: str):
     db = get_db()
@@ -71,3 +72,32 @@ def update_document_status(document_id, status, stage=None):
         {"_id": document_id},
         {"$set": update_fields}
     )
+
+def get_all_documents():
+
+    client = MongoClient("mongodb://localhost:27017/")
+    db = client["PBL2"]
+
+    collection = db["parsed_documents"]
+
+    docs = list(collection.find())
+
+    print(f"\n🧠 TOTAL PARSED DOCS: {len(docs)}")
+
+    latest_docs = {}
+
+    for doc in docs:
+        doc_id = doc.get("document_id")
+
+        # pick latest version
+        if doc_id not in latest_docs:
+            latest_docs[doc_id] = doc
+        else:
+            if doc.get("created_at") > latest_docs[doc_id].get("created_at"):
+                latest_docs[doc_id] = doc
+
+    final_docs = list(latest_docs.values())
+
+    print(f"✅ USING LATEST VERSIONS: {len(final_docs)}")
+
+    return final_docs
